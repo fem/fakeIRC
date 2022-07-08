@@ -47,6 +47,13 @@ void ConnectionHandler::start()
 		          << '\n';
 		return;
 	}
+	vprint("setting up epoll for sigfd\n");
+	struct epoll_event sigfd_epe = {.events = EPOLLIN, .data = {.fd = sigfd}};
+	res = epoll_ctl(epollfd, EPOLL_CTL_ADD, sigfd, &sigfd_epe);
+	if (res < 0) {
+		std::cerr << "Failed setting up epoll for sigfd: " << strerror(errno)
+		          << '\n';
+	}
 
 	struct epoll_event next_event;
 
@@ -57,13 +64,7 @@ void ConnectionHandler::start()
 			vprint("epoll_wait() returned without events\n");
 			continue;
 		} else if (res < 0 && errno == EINTR) {
-			std::cout << "Exiting...\n";
-			broadcast_message("* this server is shutting down");
-
-			for (auto& [fd, peer] : peers)
-				peer.close();
-			peers.clear();
-
+			disconnect_clients();
 			run = false;
 			goto epoll_uninit;
 		} else if (res < 0) {
@@ -104,6 +105,11 @@ void ConnectionHandler::start()
 			}
 
 			++connections_accepted;
+		} else if (event_fd == sigfd) {
+			vprint("Received signal\n");
+			disconnect_clients();
+			run = false;
+			goto epoll_uninit;
 		} else {
 			vprint("Client epoll event!\n");
 			char buf;
@@ -132,4 +138,14 @@ void ConnectionHandler::broadcast_message(const std::string& msg)
 	std::string nl_msg = msg + '\n';
 	for (const auto& [_, peer] : peers)
 		peer.send_message(nl_msg);
+}
+
+void ConnectionHandler::disconnect_clients()
+{
+	std::cout << "Exiting...\n";
+	broadcast_message("* this server is shutting down");
+
+	for (auto& [fd, peer] : peers)
+		peer.close();
+	peers.clear();
 }

@@ -10,7 +10,12 @@
 class ConnectionHandler
 {
 public:
-	ConnectionHandler(int sockfd, int address_family, std::string& motd) : sockfd(sockfd), address_family(address_family), motd(motd)
+	ConnectionHandler(int sigfd, int sockfd, int address_family,
+	                  std::string& motd)
+	    : sigfd(sigfd)
+	    , sockfd(sockfd)
+	    , address_family(address_family)
+	    , motd(motd)
 	{}
 	ConnectionHandler(const ConnectionHandler&) = delete;
 	~ConnectionHandler() = default;
@@ -20,6 +25,9 @@ public:
 	void broadcast_message(const std::string& msg);
 
 private:
+	void disconnect_clients();
+
+	int sigfd;
 	int sockfd;
 	int address_family;
 	volatile bool run{false};

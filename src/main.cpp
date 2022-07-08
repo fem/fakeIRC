@@ -1,12 +1,14 @@
 #include <iostream>
+#include <stdexcept>
 
 #include <cstdlib>
 #include <cstring>
 
 #include <netinet/ip.h>
+#include <signal.h>
+#include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <signal.h>
 
 #include <unistd.h>
 
@@ -24,6 +26,7 @@ uint16_t port{1337};
 int sock_domain{-1};
 sa_family_t sa_family;
 
+int create_signal_fd();
 void print_usage();
 bool assert_args();
 } // namespace
@@ -119,7 +122,10 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	ConnectionHandler conn_handler{sockfd, sa_family, motd};
+	int sigfd = create_signal_fd();
+	vprint("Set up sigfd ", sigfd, "\n");
+
+	ConnectionHandler conn_handler{sigfd, sockfd, sa_family, motd};
 	conn_handler.start();
 
 	return 0;
@@ -127,6 +133,30 @@ int main(int argc, char** argv)
 
 namespace
 {
+int create_signal_fd()
+{
+	int res;
+	sigset_t mask;
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	sigaddset(&mask, SIGTERM);
+	sigaddset(&mask, SIGQUIT);
+
+	res = sigprocmask(SIG_BLOCK, &mask, NULL);
+	if (res == -1) {
+		throw std::runtime_error(std::string{"Failed to set sigprocmask: "}
+		                         + strerror(errno));
+	}
+
+	int sigfd = signalfd(-1, &mask, 0);
+	if (sigfd == -1) {
+		throw std::runtime_error(std::string{"Failed to set sigfd: "}
+		                         + strerror(errno));
+	}
+
+	return sigfd;
+}
+
 void print_usage()
 {
 	std::cout << "fakeirc\tCopyright (C) 2021 Adrian Schollmeyer\n\n"
